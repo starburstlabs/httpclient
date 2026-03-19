@@ -445,10 +445,15 @@ class HTTPClient
     }.freeze
 
     def ssl_version_constant(ssl_version)
-      const_name = SSL_VERSION_CONSTANTS[ssl_version.to_s]
-      return nil unless const_name
+      const_name = SSL_VERSION_CONSTANTS[ssl_version.to_s] or
+        raise ArgumentError, "Unrecognized ssl_version: #{ssl_version.inspect}. " \
+          "Use min_version=/max_version= with OpenSSL::SSL::TLS1_2_VERSION etc., " \
+          "or one of: #{SSL_VERSION_CONSTANTS.keys.join(', ')}"
       const_sym = "OpenSSL::SSL::#{const_name}"
-      Object.const_defined?(const_sym) ? Object.const_get(const_sym) : nil
+      unless Object.const_defined?(const_sym)
+        raise ArgumentError, "#{const_sym} is not available in this OpenSSL build"
+      end
+      Object.const_get(const_sym)
     end
 
     # Use 2048 bit certs trust anchor
