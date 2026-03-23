@@ -97,6 +97,12 @@ class HTTPClient
     # See {OpenSSL::SSL::SSLContext::METHODS} for a list of available versions
     # in your specific Ruby environment.
     attr_config :ssl_version
+    # Minimum TLS protocol version. Use OpenSSL::SSL::TLS1_2_VERSION etc.
+    # Preferred over ssl_version for OpenSSL 3.x compatibility.
+    attr_config :min_version
+    # Maximum TLS protocol version. Use OpenSSL::SSL::TLS1_2_VERSION etc.
+    # Preferred over ssl_version for OpenSSL 3.x compatibility.
+    attr_config :max_version
     # OpenSSL::X509::Certificate:: certificate for SSL client authentication.
     # nil by default. (no client authentication)
     attr_config :client_cert
@@ -158,6 +164,8 @@ class HTTPClient
       @dest = nil
       @timeout = nil
       @ssl_version = :auto
+      @min_version = nil
+      @max_version = nil
       # Follow ruby-ossl's definition
       @options = OpenSSL::SSL::OP_ALL
       @options &= ~OpenSSL::SSL::OP_DONT_INSERT_EMPTY_FRAGMENTS if defined?(OpenSSL::SSL::OP_DONT_INSERT_EMPTY_FRAGMENTS)
@@ -308,7 +316,13 @@ class HTTPClient
       ctx.timeout = @timeout
       ctx.options = @options
       ctx.ciphers = @ciphers
-      ctx.ssl_version = @ssl_version unless @ssl_version == :auto
+      if @min_version
+        ctx.min_version = @min_version
+      elsif @ssl_version != :auto
+        ctx.min_version = ssl_version_constant(@ssl_version)
+        ctx.max_version = ssl_version_constant(@ssl_version)
+      end
+      ctx.max_version = @max_version if @max_version
     end
 
     # post connection check proc for ruby < 1.8.5.
@@ -420,6 +434,26 @@ class HTTPClient
     def change_notify
       @client.reset_all
       nil
+    end
+
+    SSL_VERSION_CONSTANTS = {
+      'SSLv3'   => :SSL3_VERSION,
+      'TLSv1'   => :TLS1_VERSION,
+      'TLSv1_1' => :TLS1_1_VERSION,
+      'TLSv1_2' => :TLS1_2_VERSION,
+      'TLSv1_3' => :TLS1_3_VERSION,
+    }.freeze
+
+    def ssl_version_constant(ssl_version)
+      const_name = SSL_VERSION_CONSTANTS[ssl_version.to_s] or
+        raise ArgumentError, "Unrecognized ssl_version: #{ssl_version.inspect}. " \
+          "Use min_version=/max_version= with OpenSSL::SSL::TLS1_2_VERSION etc., " \
+          "or one of: #{SSL_VERSION_CONSTANTS.keys.join(', ')}"
+      const_sym = "OpenSSL::SSL::#{const_name}"
+      unless Object.const_defined?(const_sym)
+        raise ArgumentError, "#{const_sym} is not available in this OpenSSL build"
+      end
+      Object.const_get(const_sym)
     end
 
     # Use 2048 bit certs trust anchor
